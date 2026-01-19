@@ -1,0 +1,86 @@
+========================================
+STEP 1: EXPORT LOCAL DATABASE
+========================================
+
+1. Open browser: http://localhost/phpmyadmin
+
+2. Click "alerto360" database (left sidebar)
+
+3. Click "Export" tab (top menu)
+
+4. Export method: Quick
+   Format: SQL
+
+5. Click "Go" button
+
+6. Save file as: alerto360.sql
+   (Download to your computer)
+
+========================================
+STEP 2: IMPORT TO INFINITYFREE
+========================================
+
+1. Go to InfinityFree Control Panel
+   https://app.infinityfree.com
+
+2. Click "phpMyAdmin" button
+
+3. Login with database credentials:
+   Username: if_40027521
+   Password: P5TtWhm5OuHrP
+
+4. Click database: if_40027521_alerto360 (left sidebar)
+
+5. Click "Import" tab (top menu)
+
+6. Click "Choose File" button
+
+7. Select: alerto360.sql (from your downloads)
+
+8. Scroll down, click "Go" button
+
+9. Wait for import to complete
+   (May take 1-2 minutes)
+
+10. Success message: "Import has been successfully finished"
+
+========================================
+STEP 3: SET UPLOADS FOLDER PERMISSIONS
+========================================
+
+1. Go to InfinityFree File Manager
+
+2. Navigate to: htdocs/uploads
+
+3. Right-click "uploads" folder
+
+4. Click "Change Permissions"
+
+5. Set to: 755 or 777
+
+6. Click "Change Permissions" button
+
+========================================
+STEP 4: TEST WEBSITE
+========================================
+
+1. Open browser: https://alerto360.infinityfreeapp.com
+
+2. Test login page loads
+
+3. Try logging in with test account
+
+4. Check if images load
+
+5. Test admin dashboard
+
+========================================
+STEP 5: UPDATE FLUTTER APP URL
+========================================
+
+After website is working, update Flutter app
+to use the new hosted URL.
+
+See: UPDATE_FLUTTER_URL.txt
+
+========================================

@@ -1,0 +1,61 @@
+========================================
+UPDATE FLUTTER APP URL
+========================================
+
+After your website is working on InfinityFree,
+update the Flutter app to connect to it.
+
+========================================
+STEP 1: UPDATE API SERVICE
+========================================
+
+File: alerto360_app/lib/services/api_service.dart
+
+Change line 13 from:
+  static const String baseUrl = 'http://192.168.254.107/Alerto360-main';
+
+To:
+  static const String baseUrl = 'https://alerto360.infinityfreeapp.com';
+
+========================================
+STEP 2: REBUILD APK
+========================================
+
+Open Command Prompt in project folder:
+
+cd alerto360_app
+flutter clean
+flutter pub get
+flutter build apk --release
+
+Wait 5-10 minutes for build to complete.
+
+========================================
+STEP 3: INSTALL NEW APK
+========================================
+
+APK location:
+alerto360_app\build\app\outputs\flutter-apk\app-release.apk
+
+Transfer to phone and install.
+
+========================================
+STEP 4: TEST APK
+========================================
+
+1. Open app on phone
+2. Try login
+3. Test report incident
+4. Test AI detection
+5. Test responder features
+
+========================================
+IMPORTANT NOTES
+========================================
+
+✅ Make sure website is working first before updating APK
+✅ Use HTTPS (not HTTP) for InfinityFree URL
+✅ Test all features on website before testing APK
+✅ Keep old APK as backup
+
+========================================

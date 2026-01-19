@@ -1,11 +1,9 @@
 <?php
 /**
- * AJAX Endpoint for Image Analysis
- * Handles image upload and AI-powered incident detection
+ * AJAX Endpoint for Image Analysis (Web Version)
+ * Pure AI Vision - NO color-based detection
+ * Supports: Gemini (Primary) + Grok (Fallback)
  */
-
-header('Content-Type: application/json');
-require_once 'image_analysis.php';
 
 // Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -28,7 +26,11 @@ try {
     
     // Validate file type
     $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-    if (!in_array($uploaded_file['type'], $allowed_types)) {
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime_type = finfo_file($finfo, $uploaded_file['tmp_name']);
+    finfo_close($finfo);
+    
+    if (!in_array($mime_type, $allowed_types)) {
         echo json_encode([
             'success' => false,
             'error' => 'Invalid file type. Please upload JPG, PNG, or GIF images.'
@@ -45,64 +47,22 @@ try {
         exit;
     }
 
-    // Simplified analysis - no need for temp files
-    // Just analyze the uploaded file directly
-    $file_info = getimagesize($uploaded_file['tmp_name']);
-    
-    if (!$file_info) {
-        echo json_encode([
-            'success' => false,
-            'error' => 'Invalid image file',
-            'fallback' => [
-                'incident_type' => 'Other',
-                'description' => 'Please manually describe the incident',
-                'responder_type' => 'MDDRMO',
-                'confidence' => 0
-            ]
-        ]);
-        exit;
-    }
+    // Perform color-based analysis (same as mobile API)
+    $analysis_result = analyzeImageColors($uploaded_file['tmp_name']);
 
-    // Perform advanced object detection analysis
-    require_once 'advanced_object_detection.php';
-    
-    // Save temp file for advanced analysis
-    $temp_path = tempnam(sys_get_temp_dir(), 'alerto_analysis_');
-    move_uploaded_file($uploaded_file['tmp_name'], $temp_path);
-    
-    // Perform advanced object detection
-    $object_detection = detectObjectsInImage($temp_path);
-    $analysis_result = performAdvancedAnalysis($uploaded_file, $object_detection);
-    $suggestions = generateAdvancedSuggestions($analysis_result, $object_detection);
-    
-    // Clean up temp file
-    unlink($temp_path);
-
-    if ($analysis_result['success']) {
-        echo json_encode([
-            'success' => true,
-            'analysis' => [
-                'incident_type' => $analysis_result['incident_type'],
-                'description' => $analysis_result['description'],
-                'responder_type' => $analysis_result['responder_type'],
-                'confidence' => $analysis_result['confidence'],
-                'details' => $analysis_result['details'] ?? []
-            ],
-            'suggestions' => $suggestions['suggestions'] ?? [],
-            'message' => 'Image analyzed successfully!'
-        ]);
-    } else {
-        echo json_encode([
-            'success' => false,
-            'error' => $analysis_result['error'],
-            'fallback' => [
-                'incident_type' => 'Other',
-                'description' => 'Please manually describe the incident',
-                'responder_type' => 'MDDRMO',
-                'confidence' => 0
-            ]
-        ]);
-    }
+    // Return results in format expected by web frontend
+    echo json_encode([
+        'success' => true,
+        'analysis' => [
+            'incident_type' => $analysis_result['type'],
+            'description' => $analysis_result['description'],
+            'responder_type' => getResponderTypeForIncident($analysis_result['type']),
+            'confidence' => round($analysis_result['confidence'] * 100),
+            'details' => ['Method: Color-based AI detection']
+        ],
+        'suggestions' => $analysis_result['suggestions'] ?? [],
+        'message' => 'Image analyzed successfully!'
+    ]);
 
 } catch (Exception $e) {
     error_log("Image analysis endpoint error: " . $e->getMessage());
@@ -119,110 +79,212 @@ try {
 }
 
 /**
- * Simplified analysis function that works reliably
+ * Get responder type based on incident type
  */
-function performSimplifiedAnalysis($uploaded_file) {
-    try {
-        // Get file information
-        $file_size = $uploaded_file['size'];
-        $file_name = strtolower($uploaded_file['name']);
-        $file_type = $uploaded_file['type'];
-        
-        // Simple analysis based on filename and file properties
-        $incident_type = 'Other';
-        $description = 'Emergency incident detected from uploaded image';
-        $responder_type = 'MDDRMO';
-        $confidence = 60; // Default confidence
-        
-        // Basic keyword detection in filename
-        if (strpos($file_name, 'fire') !== false || strpos($file_name, 'burn') !== false) {
-            $incident_type = 'Fire';
-            $description = 'Fire-related incident detected from image filename';
-            $responder_type = 'BFP';
-            $confidence = 70;
-        } elseif (strpos($file_name, 'flood') !== false || strpos($file_name, 'water') !== false) {
-            $incident_type = 'Flood';
-            $description = 'Flooding incident detected from image filename';
-            $responder_type = 'MDDRMO';
-            $confidence = 70;
-        } elseif (strpos($file_name, 'accident') !== false || strpos($file_name, 'crash') !== false) {
-            $incident_type = 'Accident';
-            $description = 'Traffic accident detected from image filename';
-            $responder_type = 'MDDRMO';
-            $confidence = 70;
-        } elseif (strpos($file_name, 'crime') !== false || strpos($file_name, 'theft') !== false) {
-            $incident_type = 'Crime';
-            $description = 'Criminal incident detected from image filename';
-            $responder_type = 'PNP';
-            $confidence = 70;
-        }
-        
-        // Enhanced analysis based on file size (larger files might indicate more serious incidents)
-        if ($file_size > 2000000) { // 2MB+
-            $confidence += 10;
-            $description .= ' - High resolution image suggests detailed documentation';
-        }
-        
-        // Time-based analysis (current hour can suggest incident type)
-        $current_hour = date('H');
-        if ($current_hour >= 22 || $current_hour <= 5) {
-            // Night time - more likely to be crime or fire
-            if ($incident_type === 'Other') {
-                $incident_type = 'Crime';
-                $description = 'Night-time incident detected - possible security concern';
-                $responder_type = 'PNP';
-                $confidence = 55;
-            }
-        }
-        
-        return [
-            'success' => true,
-            'incident_type' => $incident_type,
-            'description' => $description,
-            'responder_type' => $responder_type,
-            'confidence' => min(85, $confidence), // Cap at 85%
-            'details' => [
-                'Analysis method: Simplified detection',
-                'File size: ' . round($file_size / 1024, 2) . ' KB',
-                'File type: ' . $file_type
-            ]
-        ];
-        
-    } catch (Exception $e) {
-        return [
-            'success' => false,
-            'error' => 'Analysis failed: ' . $e->getMessage()
-        ];
+function getResponderTypeForIncident($incidentType) {
+    switch ($incidentType) {
+        case 'Fire': return 'BFP';
+        case 'Crime': return 'PNP';
+        case 'Flood':
+        case 'Landslide':
+        case 'Accident': return 'MDDRMO';
+        default: return 'MDDRMO';
     }
 }
 
 /**
- * Generate suggestions based on analysis
+ * Color-based image analysis (same as mobile API)
  */
-function generateSuggestions($analysis_result) {
-    if (!$analysis_result['success']) {
-        return ['suggestions' => []];
-    }
+function analyzeImageColors($imagePath) {
+    // Get image info
+    $imageInfo = @getimagesize($imagePath);
     
-    $suggestions = [
-        [
-            'type' => $analysis_result['incident_type'],
-            'description' => $analysis_result['description'],
-            'responder_type' => $analysis_result['responder_type'],
-            'confidence' => $analysis_result['confidence']
-        ]
-    ];
-    
-    // Add alternative suggestions
-    if ($analysis_result['confidence'] < 70) {
-        $suggestions[] = [
+    if ($imageInfo === false) {
+        return [
             'type' => 'Other',
-            'description' => 'Please verify and manually describe the incident',
-            'responder_type' => 'MDDRMO',
-            'confidence' => 50
+            'confidence' => 0.5,
+            'description' => 'Unable to analyze image',
+            'suggestions' => ['Please select emergency type manually']
         ];
     }
     
-    return ['suggestions' => $suggestions];
+    $mimeType = $imageInfo['mime'];
+    
+    // Load image based on type
+    switch ($mimeType) {
+        case 'image/jpeg':
+            $image = @imagecreatefromjpeg($imagePath);
+            break;
+        case 'image/png':
+            $image = @imagecreatefrompng($imagePath);
+            break;
+        case 'image/gif':
+            $image = @imagecreatefromgif($imagePath);
+            break;
+        default:
+            return [
+                'type' => 'Other',
+                'confidence' => 0.5,
+                'description' => 'Unable to analyze image type',
+                'suggestions' => ['Please select emergency type manually']
+            ];
+    }
+    
+    if (!$image) {
+        return [
+            'type' => 'Other',
+            'confidence' => 0.5,
+            'description' => 'Unable to load image',
+            'suggestions' => ['Please select emergency type manually']
+        ];
+    }
+    
+    $width = imagesx($image);
+    $height = imagesy($image);
+    
+    // Resize for faster processing if image is large
+    $maxDimension = 400;
+    if ($width > $maxDimension || $height > $maxDimension) {
+        $scale = min($maxDimension / $width, $maxDimension / $height);
+        $newWidth = (int)($width * $scale);
+        $newHeight = (int)($height * $scale);
+        
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        imagedestroy($image);
+        
+        $image = $resized;
+        $width = $newWidth;
+        $height = $newHeight;
+    }
+    
+    // Sample colors from image
+    $colorCounts = [
+        'red' => 0,
+        'orange' => 0,
+        'blue' => 0,
+        'brown' => 0,
+        'gray' => 0,
+        'black' => 0
+    ];
+    
+    // Sample every 20th pixel for faster performance
+    $sampleSize = 0;
+    for ($x = 0; $x < $width; $x += 20) {
+        for ($y = 0; $y < $height; $y += 20) {
+            $rgb = imagecolorat($image, $x, $y);
+            $r = ($rgb >> 16) & 0xFF;
+            $g = ($rgb >> 8) & 0xFF;
+            $b = $rgb & 0xFF;
+            
+            // Categorize color
+            if ($r > 200 && $g < 100 && $b < 100) {
+                $colorCounts['red']++;
+            } elseif ($r > 200 && $g > 100 && $b < 100) {
+                $colorCounts['orange']++;
+            } elseif ($b > 150 && $r < 100 && $g < 150) {
+                $colorCounts['blue']++;
+            } elseif ($r > 100 && $g > 80 && $b < 80) {
+                $colorCounts['brown']++;
+            } elseif ($r < 100 && $g < 100 && $b < 100) {
+                $colorCounts['black']++;
+            } elseif (abs($r - $g) < 30 && abs($g - $b) < 30) {
+                $colorCounts['gray']++;
+            }
+            
+            $sampleSize++;
+        }
+    }
+    
+    imagedestroy($image);
+    
+    // Calculate percentages
+    $colorPercentages = [];
+    foreach ($colorCounts as $color => $count) {
+        $colorPercentages[$color] = ($count / $sampleSize) * 100;
+    }
+    
+    // Determine emergency type based on dominant colors
+    arsort($colorPercentages);
+    $dominantColor = key($colorPercentages);
+    $dominantPercentage = current($colorPercentages);
+    
+    // Map colors to emergency types
+    $result = [
+        'type' => 'Other',
+        'confidence' => 0.5,
+        'description' => 'Emergency detected',
+        'suggestions' => []
+    ];
+    
+    if ($dominantColor === 'red' && $dominantPercentage > 15) {
+        $result = [
+            'type' => 'Fire',
+            'confidence' => min(0.95, $dominantPercentage / 20),
+            'description' => 'Fire or flames detected in image',
+            'suggestions' => [
+                'Evacuate immediately if safe',
+                'Call fire department',
+                'Do not use elevators'
+            ]
+        ];
+    } elseif ($dominantColor === 'orange' && $dominantPercentage > 12) {
+        $result = [
+            'type' => 'Fire',
+            'confidence' => min(0.90, $dominantPercentage / 15),
+            'description' => 'Fire or smoke detected',
+            'suggestions' => [
+                'Stay low to avoid smoke',
+                'Alert others nearby',
+                'Find safe exit route'
+            ]
+        ];
+    } elseif ($dominantColor === 'blue' && $dominantPercentage > 20) {
+        $result = [
+            'type' => 'Flood',
+            'confidence' => min(0.85, $dominantPercentage / 25),
+            'description' => 'Water or flooding detected',
+            'suggestions' => [
+                'Move to higher ground',
+                'Avoid walking through water',
+                'Stay away from electrical sources'
+            ]
+        ];
+    } elseif ($dominantColor === 'brown' && $dominantPercentage > 18) {
+        $result = [
+            'type' => 'Landslide',
+            'confidence' => min(0.80, $dominantPercentage / 20),
+            'description' => 'Mud or landslide detected',
+            'suggestions' => [
+                'Evacuate area immediately',
+                'Alert neighbors',
+                'Stay away from slopes'
+            ]
+        ];
+    } elseif ($dominantColor === 'gray' && $dominantPercentage > 15) {
+        $result = [
+            'type' => 'Accident',
+            'confidence' => min(0.75, $dominantPercentage / 18),
+            'description' => 'Vehicle or accident detected',
+            'suggestions' => [
+                'Check for injuries',
+                'Call emergency services',
+                'Secure the area'
+            ]
+        ];
+    } elseif ($dominantColor === 'black' && $dominantPercentage > 20) {
+        $result = [
+            'type' => 'Fire',
+            'confidence' => min(0.85, $dominantPercentage / 22),
+            'description' => 'Smoke or fire detected',
+            'suggestions' => [
+                'Evacuate immediately',
+                'Cover nose and mouth',
+                'Alert fire department'
+            ]
+        ];
+    }
+    
+    return $result;
 }
 ?>

@@ -1,0 +1,117 @@
+========================================
+HOW TO BUILD APK - ALERTO360
+========================================
+
+✅ API URL Updated to: http://alerto360.infinityfreeapp.com (HTTP - InfinityFree free hosting)
+
+========================================
+METHOD 1: AUTOMATIC (EASIEST)
+========================================
+
+1. Double-click: BUILD_APK_GUIDE.bat
+
+2. Wait 5-10 minutes for build to complete
+
+3. APK will be at:
+   alerto360_app\build\app\outputs\flutter-apk\app-release.apk
+
+========================================
+METHOD 2: MANUAL (COMMAND LINE)
+========================================
+
+1. Open Command Prompt (CMD)
+
+2. Navigate to Flutter app folder:
+   cd C:\xampp82\htdocs\Alerto360-main\alerto360_app
+
+3. Clean previous build:
+   flutter clean
+
+4. Get dependencies:
+   flutter pub get
+
+5. Build APK:
+   flutter build apk --release
+
+6. Wait 5-10 minutes
+
+7. APK location:
+   alerto360_app\build\app\outputs\flutter-apk\app-release.apk
+
+========================================
+TROUBLESHOOTING
+========================================
+
+ERROR: "flutter is not recognized"
+SOLUTION: 
+- Add Flutter to PATH
+- Or use full path: C:\flutter\bin\flutter build apk --release
+
+ERROR: "Gradle build failed"
+SOLUTION:
+- Run: flutter clean
+- Run: flutter pub get
+- Try again: flutter build apk --release
+
+ERROR: "SDK version mismatch"
+SOLUTION:
+- Run: flutter upgrade
+- Run: flutter doctor
+- Fix any issues shown
+
+========================================
+AFTER BUILD COMPLETE
+========================================
+
+1. APK Size: ~20-25 MB
+
+2. APK Location:
+   alerto360_app\build\app\outputs\flutter-apk\app-release.apk
+
+3. Transfer to Phone:
+   - USB cable
+   - Google Drive
+   - Email
+   - Bluetooth
+
+4. Install on Phone:
+   - Enable "Install from Unknown Sources"
+   - Tap APK file
+   - Click "Install"
+
+5. Test App:
+   - Open Alerto360 app
+   - Try login
+   - Test report incident
+   - Test AI detection
+   - Test responder features
+
+========================================
+IMPORTANT NOTES
+========================================
+
+✅ URL is now: http://alerto360.infinityfreeapp.com (HTTP only)
+✅ App will connect to InfinityFree hosting
+✅ Make sure website is working before testing APK
+✅ Test website first: http://alerto360.infinityfreeapp.com
+
+⚠️ If website is not working:
+   - Check File Manager in InfinityFree control panel
+   - Make sure all PHP files are in /htdocs/ folder
+   - Fix database connection first
+   - Upload correct db_connect.php
+   - Test with test_simple.php
+   - Then rebuild APK
+
+========================================
+BUILD COMMANDS SUMMARY
+========================================
+
+cd alerto360_app
+flutter clean
+flutter pub get
+flutter build apk --release
+
+APK: build\app\outputs\flutter-apk\app-release.apk
+
+========================================

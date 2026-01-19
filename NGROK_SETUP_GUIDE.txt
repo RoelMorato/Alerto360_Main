@@ -1,0 +1,102 @@
+========================================
+NGROK SETUP GUIDE - ALERTO360
+========================================
+
+PROBLEM: InfinityFree blocks mobile app requests
+SOLUTION: Use local XAMPP + ngrok tunnel
+
+========================================
+STEP 1: DOWNLOAD NGROK
+========================================
+
+1. Go to: https://ngrok.com/
+2. Sign up for free account
+3. Download ngrok for Windows
+4. Extract ngrok.exe to C:\ngrok\
+
+========================================
+STEP 2: SETUP NGROK
+========================================
+
+1. Open Command Prompt as Administrator
+2. Run: C:\ngrok\ngrok.exe authtoken YOUR_TOKEN
+   (Get token from ngrok dashboard)
+3. Navigate to XAMPP folder: cd C:\xampp82\htdocs\Alerto360-main
+4. Start XAMPP (Apache + MySQL)
+5. Run: C:\ngrok\ngrok.exe http 80
+
+========================================
+STEP 3: GET NGROK URL
+========================================
+
+After running ngrok, you'll see:
+- Forwarding: https://abc123.ngrok-free.app -> http://localhost:80
+
+Copy the HTTPS URL (e.g., https://abc123.ngrok-free.app)
+
+========================================
+STEP 4: UPDATE FLUTTER APP
+========================================
+
+1. Open: alerto360_app/lib/services/api_service.dart
+2. Change baseUrl to your ngrok URL:
+   static const String baseUrl = 'https://abc123.ngrok-free.app';
+3. Update API endpoints to use local_api.php
+
+========================================
+STEP 5: SETUP LOCAL DATABASE
+========================================
+
+1. Open phpMyAdmin: http://localhost/phpmyadmin
+2. Create database: alerto360
+3. Import: alerto360.sql
+4. Update db_connect.php to use local settings
+
+========================================
+STEP 6: TEST & BUILD APK
+========================================
+
+1. Test API: https://abc123.ngrok-free.app/local_api.php?action=login
+2. Should show: "Email and password required"
+3. Build APK: flutter build apk --release
+4. Install and test on phone
+
+========================================
+ADVANTAGES OF NGROK SOLUTION
+========================================
+
+✅ No CloudFlare blocking
+✅ Full control over server
+✅ Real-time debugging
+✅ Works with any mobile device
+✅ Free to use
+✅ HTTPS support
+
+========================================
+COMMANDS SUMMARY
+========================================
+
+# Start ngrok
+cd C:\xampp82\htdocs\Alerto360-main
+C:\ngrok\ngrok.exe http 80
+
+# Build APK
+cd alerto360_app
+flutter clean
+flutter pub get
+flutter build apk --release
+
+========================================
+TROUBLESHOOTING
+========================================
+
+ERROR: "ngrok not found"
+SOLUTION: Add C:\ngrok\ to Windows PATH
+
+ERROR: "tunnel not found"
+SOLUTION: Make sure XAMPP Apache is running
+
+ERROR: "database connection failed"
+SOLUTION: Start XAMPP MySQL and import database
+
+========================================

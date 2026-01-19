@@ -17,10 +17,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($check->fetch()) {
                 $register_msg = '<div style="color:red;">Email already exists.</div>';
             } else {
+                require_once 'email_verification_functions.php';
+                
                 $hashed = password_hash($password, PASSWORD_DEFAULT);
-                $insert = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, 'citizen')");
+                $insert = $pdo->prepare("INSERT INTO users (name, email, password, role, email_verified, verification_required) VALUES (?, ?, ?, 'citizen', 0, 1)");
                 if ($insert->execute([$name, $email, $hashed])) {
-                    $register_msg = '<div style="color:green;">Registration successful! You can now <a href=\'login.php\'>login</a>.</div>';
+                    $user_id = $pdo->lastInsertId();
+                    
+                    // Send verification email
+                    $verificationResult = createVerificationCode($user_id, $email);
+                    
+                    if ($verificationResult['success']) {
+                        $_SESSION['verification_email'] = $email;
+                        $_SESSION['verification_user_id'] = $user_id;
+                        header('Location: verify_email.php');
+                        exit;
+                    } else {
+                        // Still allow verification even if email failed
+                        $_SESSION['verification_email'] = $email;
+                        $_SESSION['verification_user_id'] = $user_id;
+                        $register_msg = '<div style="color:orange;">⚠️ Registration successful but email sending failed. <a href="verify_email.php">Click here to enter code manually</a> or contact support.</div>';
+                    }
                 } else {
                     $register_msg = '<div style="color:red;">Registration failed. Please try again.</div>';
                 }

@@ -330,4 +330,51 @@ function handleIncidentNotifications($pdo, $incident_id, $incident_type, $locati
     
     return $results;
 }
-?>
+
+/**
+ * Alias for handleIncidentNotifications - for backward compatibility
+ */
+function notifyNewIncident($pdo, $incident_id, $incident_type, $location_info = '') {
+    return handleIncidentNotifications($pdo, $incident_id, $incident_type, $location_info, false);
+}
+
+/**
+ * Create a notification for a specific user
+ * @param PDO $pdo Database connection
+ * @param int $user_id ID of the user to notify
+ * @param string $message Notification message
+ * @param string $type Type of notification (incident, alert, info)
+ * @param int|null $incident_id Related incident ID (optional)
+ * @return bool Success status
+ */
+function createNotification($pdo, $user_id, $message, $type = 'info', $incident_id = null) {
+    try {
+        // Add type prefix to message
+        $prefix = '';
+        switch ($type) {
+            case 'incident':
+                $prefix = '🚨 ';
+                break;
+            case 'alert':
+                $prefix = '⚠️ ';
+                break;
+            case 'info':
+                $prefix = 'ℹ️ ';
+                break;
+        }
+        
+        $full_message = $prefix . $message;
+        
+        // Add incident reference if provided
+        if ($incident_id) {
+            $full_message .= " (Incident #$incident_id)";
+        }
+        
+        $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, is_read, created_at) VALUES (?, ?, 0, NOW())");
+        return $stmt->execute([$user_id, $full_message]);
+        
+    } catch (Exception $e) {
+        error_log("Create notification error: " . $e->getMessage());
+        return false;
+    }
+}

@@ -1,14 +1,8 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    exit(0);
-}
-
-require 'db_connect.php';
+// Initialize API with clean JSON output
+require_once 'api_init.php';
+require_once 'db_connect.php';
+require_once 'email_verification_functions.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -43,15 +37,50 @@ try {
     }
 
     $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-    $insert = $pdo->prepare("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
     
-    if ($insert->execute([$name, $email, $hashed_password, $role])) {
+    // For citizens, require email verification
+    $requiresVerification = ($role === 'citizen') ? 1 : 0;
+    
+    $insert = $pdo->prepare("
+        INSERT INTO users (name, email, password, role, email_verified, verification_required) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    ");
+    
+    if ($insert->execute([$name, $email, $hashed_password, $role, 0, $requiresVerification])) {
         $user_id = $pdo->lastInsertId();
-        echo json_encode([
-            'success' => true,
-            'message' => 'Registration successful',
-            'user_id' => (int)$user_id
-        ]);
+        
+        // Send verification email for citizens
+        if ($requiresVerification) {
+            $verificationResult = createVerificationCode($user_id, $email);
+            
+            if ($verificationResult['success']) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Registration successful! Please check your email for verification code.',
+                    'user_id' => (int)$user_id,
+                    'requires_verification' => true,
+                    'email' => $email
+                ]);
+            } else {
+                // Registration succeeded but email failed
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Registration successful but email sending failed. Please contact support.',
+                    'user_id' => (int)$user_id,
+                    'requires_verification' => true,
+                    'email' => $email,
+                    'email_error' => true
+                ]);
+            }
+        } else {
+            // No verification needed (responders, admins)
+            echo json_encode([
+                'success' => true,
+                'message' => 'Registration successful',
+                'user_id' => (int)$user_id,
+                'requires_verification' => false
+            ]);
+        }
     } else {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Registration failed']);

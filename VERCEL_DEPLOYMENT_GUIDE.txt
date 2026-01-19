@@ -1,0 +1,108 @@
+========================================
+VERCEL DEPLOYMENT GUIDE - ALERTO360
+========================================
+
+GOAL: Deploy API to Vercel for global access
+RESULT: APK will work anywhere with internet
+
+========================================
+STEP 1: INSTALL VERCEL CLI
+========================================
+
+1. Install Node.js from: https://nodejs.org/
+2. Open Command Prompt
+3. Run: npm install -g vercel
+4. Verify: vercel --version
+
+========================================
+STEP 2: DEPLOY TO VERCEL
+========================================
+
+1. Open Command Prompt in project folder:
+   cd C:\xampp82\htdocs\Alerto360-main
+
+2. Login to Vercel:
+   vercel login
+
+3. Deploy project:
+   vercel
+
+4. Follow prompts:
+   - Set up and deploy? Y
+   - Which scope? (choose your account)
+   - Link to existing project? N
+   - Project name: alerto360-api
+   - Directory: ./
+   - Override settings? N
+
+5. Wait for deployment (2-3 minutes)
+
+6. Copy the production URL (e.g., https://alerto360-api.vercel.app)
+
+========================================
+STEP 3: UPDATE FLUTTER APP
+========================================
+
+1. Update baseUrl in api_service.dart:
+   static const String baseUrl = 'https://YOUR_VERCEL_URL';
+
+2. Build new APK:
+   cd alerto360_app
+   flutter build apk --release
+
+========================================
+STEP 4: TEST DEPLOYMENT
+========================================
+
+1. Test API endpoints:
+   - https://YOUR_VERCEL_URL/api/login
+   - https://YOUR_VERCEL_URL/api/register
+
+2. Test credentials:
+   - Email: admin@alerto360.com
+   - Password: admin123
+   
+   OR
+   
+   - Email: test@alerto360.com
+   - Password: test123
+
+3. Install and test APK
+
+========================================
+ADVANTAGES OF VERCEL
+========================================
+
+✅ Free hosting
+✅ Global CDN
+✅ No mobile blocking
+✅ HTTPS by default
+✅ Fast deployment
+✅ Automatic scaling
+✅ Works anywhere with internet
+
+========================================
+TROUBLESHOOTING
+========================================
+
+ERROR: "vercel not found"
+SOLUTION: Install Node.js first, then npm install -g vercel
+
+ERROR: "Login failed"
+SOLUTION: Create free account at vercel.com first
+
+ERROR: "Deployment failed"
+SOLUTION: Check vercel.json syntax and file structure
+
+========================================
+PRODUCTION READY
+========================================
+
+After successful deployment:
+- APK works globally
+- No local server needed
+- No ngrok required
+- Professional hosting
+- Reliable uptime
+
+========================================

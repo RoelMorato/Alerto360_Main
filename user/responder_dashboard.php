@@ -1,74 +1,81 @@
 <?php
-
 session_start();
 require '../db_connect.php';
 require '../notification_functions.php';
 
 // Only allow responders
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'responder') {
-    header('Location: ../login.php');
+    header('Location: login.php');
     exit;
 }
 
-// Get responder type for the logged-in responder
-$responder_stmt = $pdo->prepare("SELECT responder_type FROM users WHERE id = ?");
+// Get responder info
+$responder_stmt = $pdo->prepare("SELECT name, responder_type FROM users WHERE id = ?");
 $responder_stmt->execute([$_SESSION['user_id']]);
 $responder = $responder_stmt->fetch(PDO::FETCH_ASSOC);
 if (!$responder) {
-    die('Responder not found. Invalid user session.');
+    die('Responder not found.');
 }
 $responder_type = $responder['responder_type'] ?? '';
+$responder_name = $responder['name'] ?? '';
 
-// Display messages from acceptance and completion process
+// Messages
 $message = '';
 if (isset($_SESSION['success_message'])) {
-    $message = '<div class="alert alert-success">';
-    $message .= '<h5><i class="fas fa-check-circle"></i> Success!</h5>';
-    $message .= htmlspecialchars($_SESSION['success_message']);
-    if (isset($_SESSION['completed_incident_id'])) {
-        $message .= '<br><strong>Incident #' . $_SESSION['completed_incident_id'] . '</strong> has been marked as completed.';
-    }
-    $message .= '</div>';
+    $message = '<div class="alert alert-success alert-dismissible fade show"><i class="fas fa-check-circle"></i> ' . htmlspecialchars($_SESSION['success_message']) . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
     unset($_SESSION['success_message']);
-    unset($_SESSION['completed_incident_id']);
-    unset($_SESSION['responder_name']);
 }
 if (isset($_SESSION['error_message'])) {
-    $message = '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> ' . htmlspecialchars($_SESSION['error_message']) . '</div>';
+    $message = '<div class="alert alert-danger alert-dismissible fade show"><i class="fas fa-exclamation-triangle"></i> ' . htmlspecialchars($_SESSION['error_message']) . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
     unset($_SESSION['error_message']);
 }
 
-// Accept incident (with status check)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accept_incident_id'])) {
-    $accept_id = intval($_POST['accept_incident_id']);
-    // Check if already accepted
-    $incident_check = $pdo->prepare("SELECT status FROM incidents WHERE id = ?");
-    $incident_check->execute([$accept_id]);
-    $row = $incident_check->fetch(PDO::FETCH_ASSOC);
-    $current_status = $row['status'] ?? '';
-    if ($current_status !== 'pending' && $current_status !== '' && $current_status !== null) {
-        die('Incident already accepted or resolved.');
-    }
-    $pdo->prepare("UPDATE incidents SET status = 'accepted', accepted_by = ? WHERE id = ?")->execute([$_SESSION['user_id'], $accept_id]);
-    header("Location: responder_dashboard.php");
-    exit;
-}
-
-// Mark as resolved
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resolve_incident_id'])) {
-    $resolve_id = intval($_POST['resolve_incident_id']);
-    $pdo->prepare("UPDATE incidents SET status = 'resolved' WHERE id = ?")->execute([$resolve_id]);
-    header("Location: responder_dashboard.php");
-    exit;
-}
-
-// Get notification count for this responder
+// Get notification count
 $notification_count = getNotificationCount($pdo, $_SESSION['user_id']);
 
-// Fetch only incidents for this responder type
-$stmt = $pdo->prepare("SELECT incidents.*, users.name AS reporter FROM incidents JOIN users ON incidents.user_id = users.id WHERE incidents.responder_type = ? ORDER BY incidents.created_at DESC");
-$stmt->execute([$responder_type]);
+// Check if assigned_to column exists
+$hasAssignedTo = false;
+try {
+    $check = $pdo->query("SHOW COLUMNS FROM incidents LIKE 'assigned_to'");
+    $hasAssignedTo = $check->rowCount() > 0;
+} catch (Exception $e) {
+    $hasAssignedTo = false;
+}
+
+// Fetch incidents - show assigned to me OR my responder type (pending) OR accepted by me
+if ($hasAssignedTo) {
+    $stmt = $pdo->prepare("
+        SELECT incidents.*, users.name AS reporter 
+        FROM incidents 
+        JOIN users ON incidents.user_id = users.id 
+        WHERE incidents.assigned_to = ? 
+           OR incidents.accepted_by = ?
+           OR (incidents.responder_type = ? AND incidents.status = 'pending' AND incidents.assigned_to IS NULL)
+        ORDER BY 
+            CASE incidents.status WHEN 'pending' THEN 1 WHEN 'accepted' THEN 2 ELSE 3 END,
+            incidents.created_at DESC
+    ");
+    $stmt->execute([$_SESSION['user_id'], $_SESSION['user_id'], $responder_type]);
+} else {
+    // Fallback query without assigned_to column
+    $stmt = $pdo->prepare("
+        SELECT incidents.*, users.name AS reporter 
+        FROM incidents 
+        JOIN users ON incidents.user_id = users.id 
+        WHERE incidents.responder_type = ? OR incidents.accepted_by = ?
+        ORDER BY 
+            CASE incidents.status WHEN 'pending' THEN 1 WHEN 'accepted' THEN 2 ELSE 3 END,
+            incidents.created_at DESC
+    ");
+    $stmt->execute([$responder_type, $_SESSION['user_id']]);
+}
 $incidents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Build base URL for images
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'];
+$base_path = dirname(dirname($_SERVER['SCRIPT_NAME']));
+$base_url = "{$protocol}://{$host}{$base_path}";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,378 +84,468 @@ $incidents = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <title>Responder Dashboard - Alerto360</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        * { box-sizing: border-box; }
         body {
             min-height: 100vh;
-            background: linear-gradient(135deg, #7b7be0 0%, #a18cd1 100%);
-            display: flex;
-            align-items: flex-start;
-            justify-content: center;
-            padding: 2rem 0;
+            background: #E8E4F3;
+            padding: 20px;
         }
-        .dashboard-container {
+        .main-container {
+            max-width: 800px;
+            margin: 0 auto;
             background: #fff;
-            border-radius: 24px;
-            box-shadow: 0 8px 32px rgba(44, 62, 80, 0.15);
-            padding: 2.5rem 2rem 2rem 2rem;
-            max-width: 1100px;
-            width: 100%;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
         }
-        .dashboard-logo {
-            width: 60px;
-            height: 60px;
-            background: linear-gradient(135deg, #7b7be0 0%, #a18cd1 100%);
+        .header-logo {
+            width: 70px;
+            height: 70px;
+            background: #7B7BE0;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 1.2rem auto;
+            margin: 0 auto 15px;
         }
-        .dashboard-logo svg {
-            width: 32px;
-            height: 32px;
-            color: #fff;
+        .header-logo i { color: white; font-size: 32px; }
+        .header-title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .btn-row .btn { flex: 1; }
+        .btn-notifications {
+            border: 1px solid #7B7BE0;
+            color: #7B7BE0;
+            background: white;
+        }
+        .btn-logout {
+            border: 1px solid #dc3545;
+            color: #dc3545;
+            background: white;
         }
         .section-title {
+            color: #7B7BE0;
+            font-size: 18px;
             font-weight: 600;
-            color: #7b7be0;
+            margin-bottom: 15px;
         }
-        .table th, .table td {
-            vertical-align: middle;
+        .incident-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-        .incident-img {
-            max-width: 80px;
-            max-height: 80px;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            border: 2px solid #e9ecef;
+        .info-row {
+            display: flex;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+            padding-bottom: 12px;
         }
-        .image-container {
-            position: relative;
+        .info-col { flex: 1; }
+        .info-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+        .status-badge {
             display: inline-block;
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
         }
-        .image-container:hover .incident-img {
-            transform: scale(1.05);
-            border-color: #7b7be0;
-            box-shadow: 0 4px 12px rgba(123, 123, 224, 0.3);
+        .status-pending { background: #FF9800; }
+        .status-accepted { background: #00BCD4; }
+        .status-completed { background: #4CAF50; }
+        .status-declined { background: #9E9E9E; }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
         }
-        .image-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
+        .btn-accept {
+            flex: 1;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 25px;
+            font-weight: 600;
             display: flex;
             align-items: center;
             justify-content: center;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            border-radius: 8px;
+            gap: 8px;
+        }
+        .btn-decline {
+            flex: 1;
+            background: white;
+            color: #F44336;
+            border: 2px solid #F44336;
+            padding: 12px;
+            border-radius: 25px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-complete {
+            width: 100%;
+            background: #4CAF50;
             color: white;
-            font-size: 1.2rem;
-        }
-        .image-container:hover .image-overlay {
-            opacity: 1;
-        }
-        .coords {
-            font-size: 0.95em;
-            color: #444;
-        }
-        .btn-success {
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             border: none;
+            padding: 12px;
+            border-radius: 25px;
+            font-weight: 600;
         }
-        .btn-success:hover {
-            background: linear-gradient(135deg, #218838 0%, #1ea085 100%);
+        .location-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
         }
+        .btn-map {
+            flex: 1;
+            background: white;
+            color: #00BCD4;
+            border: 2px solid #00BCD4;
+            padding: 10px;
+            border-radius: 25px;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+        }
+        .btn-directions {
+            flex: 1;
+            background: #00BCD4;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 25px;
+            font-weight: 600;
+            text-decoration: none;
+            text-align: center;
+        }
+        .incident-image {
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-top: 12px;
+            cursor: pointer;
+        }
+        .accepted-box {
+            background: rgba(0, 188, 212, 0.1);
+            border: 2px solid #00BCD4;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+            color: #00BCD4;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        .no-incidents {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .no-incidents i { font-size: 48px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
-<div class="dashboard-container">
-    <div class="dashboard-logo">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V7l7-4z"/></svg>
+<div class="main-container">
+    <div class="header-logo">
+        <i class="fas fa-shield-alt"></i>
     </div>
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <a href="../notifications.php" class="btn btn-outline-primary btn-sm position-relative">
-                <i class="fas fa-bell"></i> Notifications
-                <?php if ($notification_count > 0): ?>
-                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                        <?= $notification_count ?>
-                        <span class="visually-hidden">unread notifications</span>
-                    </span>
-                <?php endif; ?>
-            </a>
-        </div>
-        <h2 class="fw-bold mb-0">Responder Dashboard</h2>
-        <a href="../logout.php" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to logout?');">Logout</a>
+    <div class="header-title">Responder Dashboard</div>
+    
+    <div class="btn-row">
+        <a href="notifications.php" class="btn btn-notifications position-relative">
+            <i class="fas fa-bell"></i> Notifications
+            <?php if ($notification_count > 0): ?>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?= $notification_count ?></span>
+            <?php endif; ?>
+        </a>
+        <a href="logout.php" class="btn btn-logout" onclick="return confirm('Logout?');">Logout</a>
     </div>
+    
     <?= $message ?>
-    <div class="card p-4">
-        <h5 class="section-title mb-3">Incident Reports</h5>
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Reporter</th>
-                        <th>Type</th>
-                        <th>Description</th>
-                        <th>Status / Action</th>
-                        <th>Date</th>
-                        <th>Location</th>
-                        <th>Image</th>
-                        <th>Responder</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($incidents as $incident): ?>
-                    <?php
-                    // Defensive: treat blank status as 'pending'
-                    $status = $incident['status'] ?: 'pending';
-                    ?>
-                    <tr>
-                        <td><?= htmlspecialchars($incident['reporter']) ?></td>
-                        <td><?= htmlspecialchars($incident['type']) ?></td>
-                        <td><?= htmlspecialchars($incident['description']) ?></td>
-                        <td>
-                            <span class="badge bg-<?php 
-                                switch($status) {
-                                    case 'pending': echo 'warning'; break;
-                                    case 'accepted': echo 'info'; break;
-                                    case 'completed': echo 'success'; break;
-                                    case 'resolved': echo 'secondary'; break;
-                                    default: echo 'light';
-                                }
-                            ?>"><?= ucfirst(htmlspecialchars($status)) ?></span>
-                            
-                            <?php if ($status === 'pending'): ?>
-                                <!-- Step 1: Accept Button -->
-                                <form method="post" action="accept_request.php" style="display:inline;" class="mt-2">
-                                    <input type="hidden" name="incident_id" value="<?= $incident['id'] ?>">
-                                    <input type="hidden" name="accept_incident" value="1">
-                                    <button type="submit" class="btn btn-primary btn-sm" 
-                                            onclick="return confirm('Accept this incident?\n\nThis will:\n• Assign the incident to you\n• Show directions to location\n• Allow you to complete it later\n\nProceed?');">
-                                        <i class="fas fa-hand-paper"></i> Accept
-                                    </button>
-                                </form>
-                                
-                                <!-- Preview Location Button -->
-                                <?php if (!empty($incident['latitude']) && !empty($incident['longitude'])): ?>
-                                    <button type="button" class="btn btn-outline-info btn-sm mt-1" 
-                                            onclick="showMapPreview(<?= $incident['id'] ?>, '<?= htmlspecialchars($incident['latitude']) ?>', '<?= htmlspecialchars($incident['longitude']) ?>', '<?= htmlspecialchars($incident['type']) ?>', '<?= htmlspecialchars($incident['description']) ?>')">
-                                        <i class="fas fa-map-marker-alt"></i> View Location
-                                    </button>
-                                <?php endif; ?>
-                                
-                            <?php elseif ($status === 'accepted' && $incident['accepted_by'] == $_SESSION['user_id']): ?>
-                                <!-- Step 2: Complete Button (only for responder who accepted) -->
-                                <div class="mt-2">
-                                    <div class="text-info mb-2">
-                                        <i class="fas fa-user-check"></i> <strong>Accepted by you</strong>
-                                    </div>
-                                    
-                                    <!-- Get Directions Button -->
-                                    <?php if (!empty($incident['latitude']) && !empty($incident['longitude'])): ?>
-                                        <a href="https://www.google.com/maps/dir/?api=1&destination=<?= $incident['latitude'] ?>,<?= $incident['longitude'] ?>" 
-                                           target="_blank" class="btn btn-info btn-sm">
-                                            <i class="fas fa-directions"></i> Get Directions
-                                        </a>
-                                    <?php endif; ?>
-                                    
-                                    <!-- Complete Button -->
-                                    <form method="post" action="accept_request.php" style="display:inline;" class="ms-1">
-                                        <input type="hidden" name="incident_id" value="<?= $incident['id'] ?>">
-                                        <input type="hidden" name="complete_incident" value="1">
-                                        <button type="submit" class="btn btn-success btn-sm" 
-                                                onclick="return confirm('Mark this incident as completed?\n\nThis will:\n• Mark the incident as COMPLETED\n• Notify all admins automatically\n• Show as DONE in admin dashboard\n\nProceed?');">
-                                            <i class="fas fa-check-circle"></i> Complete
-                                        </button>
-                                    </form>
-                                </div>
-                                
-                            <?php elseif ($status === 'accepted'): ?>
-                                <div class="text-warning mt-2">
-                                    <i class="fas fa-user-clock"></i> <strong>Accepted by another responder</strong>
-                                </div>
-                                
-                            <?php elseif ($status === 'completed'): ?>
-                                <div class="text-success mt-2">
-                                    <i class="fas fa-check-circle"></i> <strong>Completed</strong>
-                                    <?php if ($incident['accepted_by'] == $_SESSION['user_id']): ?>
-                                        <br><small class="text-muted">by you</small>
-                                    <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
-                        </td>
-                        <td><?= htmlspecialchars($incident['created_at']) ?></td>
-                        <td>
-                            <?php if (!empty($incident['latitude']) && !empty($incident['longitude'])): ?>
-                                <?php if ($status === 'accepted' && $incident['accepted_by'] == $_SESSION['user_id']): ?>
-                                    <div class="coords">
-                                        <?= htmlspecialchars($incident['latitude']) ?>, <?= htmlspecialchars($incident['longitude']) ?>
-                                    </div>
-                                    <a href="https://www.google.com/maps/dir/?api=1&destination=<?= $incident['latitude'] ?>,<?= $incident['longitude'] ?>" target="_blank" class="btn btn-info btn-sm mt-1">Get Directions</a>
-                                <?php else: ?>
-                                    <a href="https://www.google.com/maps?q=<?= $incident['latitude'] ?>,<?= $incident['longitude'] ?>" target="_blank">View Map</a>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                N/A
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if (!empty($incident['image_path'])): ?>
-                                <div class="image-container">
-                                    <img src="<?= htmlspecialchars($incident['image_path']) ?>" alt="Incident Image" class="incident-img" 
-                                         onclick="showImageModal('<?= htmlspecialchars($incident['image_path']) ?>', 'Incident #<?= $incident['id'] ?> - <?= htmlspecialchars($incident['type']) ?>')" 
-                                         style="cursor: pointer;" title="Click to view full size">
-                                    <div class="image-overlay">
-                                        <i class="fas fa-search-plus"></i>
-                                    </div>
-                                </div>
-                            <?php else: ?>
-                                <span class="text-muted"><i class="fas fa-image"></i> No image</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?= htmlspecialchars($incident['responder_type'] ?? 'N/A') ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
+    
+    <div class="section-title">Incident Reports</div>
+    
+    <?php if (empty($incidents)): ?>
+        <div class="no-incidents">
+            <i class="fas fa-inbox"></i>
+            <p>No incidents found</p>
+        </div>
+    <?php else: ?>
+        <?php foreach ($incidents as $incident): 
+            $status = $incident['status'] ?: 'pending';
+            $isAcceptedByMe = $incident['accepted_by'] == $_SESSION['user_id'];
+            $isAssignedToMe = !empty($incident['assigned_to']) && $incident['assigned_to'] == $_SESSION['user_id'];
+            $lat = $incident['latitude'];
+            $lng = $incident['longitude'];
+            
+            // Image URL
+            $image_url = '';
+            if (!empty($incident['image_path'])) {
+                $img_path = preg_replace('/^\.\.\//', '', $incident['image_path']);
+                $img_path = preg_replace('/^\.\//', '', $img_path);
+                $image_url = "{$base_url}/{$img_path}";
+            }
+        ?>
+        <div class="incident-card">
+            <!-- Reporter & Type -->
+            <div class="info-row">
+                <div class="info-col">
+                    <div class="info-label">Reporter</div>
+                    <div class="info-value"><?= htmlspecialchars($incident['reporter']) ?></div>
+                </div>
+                <div class="info-col">
+                    <div class="info-label">Type</div>
+                    <div class="info-value"><?= htmlspecialchars($incident['type']) ?></div>
+                </div>
+            </div>
+            
+            <!-- Description -->
+            <div class="info-row">
+                <div class="info-col">
+                    <div class="info-label">Description</div>
+                    <div class="info-value"><?= htmlspecialchars($incident['description'] ?: '[Auto-detected incident]') ?></div>
+                </div>
+            </div>
+            
+            <!-- Status & Actions -->
+            <div class="info-row" style="flex-direction: column;">
+                <div class="info-label">Status / Action</div>
+                <span class="status-badge status-<?= $status ?>"><?= ucfirst($status) ?></span>
+                
+                <?php if ($status === 'pending'): ?>
+                    <?php if ($isAssignedToMe): ?>
+                    <div class="assigned-box" style="background: rgba(123, 123, 224, 0.1); border: 2px solid #7B7BE0; border-radius: 8px; padding: 12px; text-align: center; color: #7B7BE0; font-weight: bold; margin: 8px 0;">
+                        <i class="fas fa-user-tag"></i> Assigned to you - Please respond
+                    </div>
+                    <?php endif; ?>
+                    <div class="action-buttons">
+                        <form method="post" action="accept_request.php" style="flex:1; display:flex;">
+                            <input type="hidden" name="incident_id" value="<?= $incident['id'] ?>">
+                            <input type="hidden" name="accept_incident" value="1">
+                            <button type="submit" class="btn-accept" onclick="return confirm('Accept this incident?');">
+                                <i class="fas fa-check"></i> Accept
+                            </button>
+                        </form>
+                        <button type="button" class="btn-decline" onclick="showDeclineModal(<?= $incident['id'] ?>, '<?= htmlspecialchars($incident['type']) ?>')">
+                            <i class="fas fa-times"></i> Decline
+                        </button>
+                    </div>
+                <?php elseif ($status === 'accepted' && $isAcceptedByMe): ?>
+                    <div class="accepted-box">
+                        <i class="fas fa-check-circle"></i> Accepted by you
+                    </div>
+                    <form method="post" action="accept_request.php">
+                        <input type="hidden" name="incident_id" value="<?= $incident['id'] ?>">
+                        <input type="hidden" name="complete_incident" value="1">
+                        <button type="submit" class="btn-complete" onclick="return confirm('Mark as complete?');">
+                            <i class="fas fa-check-circle"></i> Mark as Complete
+                        </button>
+                    </form>
+                <?php elseif ($status === 'accepted'): ?>
+                    <div class="text-warning mt-2"><i class="fas fa-user-clock"></i> Accepted by another responder</div>
+                <?php elseif ($status === 'completed'): ?>
+                    <div class="text-success mt-2"><i class="fas fa-check-circle"></i> Completed <?= $isAcceptedByMe ? '(by you)' : '' ?></div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- Date & Location -->
+            <div class="info-row">
+                <div class="info-col">
+                    <div class="info-label">Date</div>
+                    <div class="info-value"><?= htmlspecialchars($incident['created_at']) ?></div>
+                </div>
+                <div class="info-col">
+                    <div class="info-label">Location</div>
+                    <div class="info-value"><?= $lat && $lng ? number_format($lat, 4) . ', ' . number_format($lng, 4) : 'N/A' ?></div>
+                </div>
+            </div>
+            
+            <!-- Location Buttons -->
+            <?php if ($lat && $lng): ?>
+            <div class="location-buttons">
+                <a href="https://www.google.com/maps?q=<?= $lat ?>,<?= $lng ?>" target="_blank" class="btn-map">
+                    <i class="fas fa-map"></i> View Map
+                </a>
+                <a href="https://www.google.com/maps/dir/?api=1&destination=<?= $lat ?>,<?= $lng ?>" target="_blank" class="btn-directions">
+                    <i class="fas fa-directions"></i> Directions
+                </a>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Image -->
+            <?php if ($image_url): ?>
+            <div class="info-row" style="flex-direction: column; border-bottom: none;">
+                <div class="info-label">Image</div>
+                <img src="<?= htmlspecialchars($image_url) ?>" alt="Incident" class="incident-image" onclick="showImageModal('<?= htmlspecialchars($image_url) ?>')">
+            </div>
+            <?php endif; ?>
+            
+            <!-- Responder Type -->
+            <div class="info-row" style="border-bottom: none;">
+                <div class="info-col">
+                    <div class="info-label">Responder Type</div>
+                    <div class="info-value"><?= htmlspecialchars(strtoupper($incident['responder_type'] ?? 'N/A')) ?></div>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<!-- Decline Modal -->
+<div class="modal fade" id="declineModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-times-circle"></i> Decline Incident</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="decline_request.php">
+                <div class="modal-body">
+                    <input type="hidden" name="incident_id" id="declineIncidentId">
+                    <input type="hidden" name="decline_incident" value="1">
+                    <p>Declining <strong id="declineIncidentType"></strong> incident.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Reason:</label>
+                        <select class="form-select mb-2" onchange="document.getElementById('declineReason').value = this.value === 'other' ? '' : this.value;">
+                            <option value="">-- Select --</option>
+                            <option value="Currently responding to another incident">Currently responding to another incident</option>
+                            <option value="Too far from location">Too far from location</option>
+                            <option value="Not enough resources">Not enough resources</option>
+                            <option value="Off duty">Off duty</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <textarea class="form-control" id="declineReason" name="decline_reason" rows="3" placeholder="Enter reason..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-times"></i> Decline</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
 <!-- Image Modal -->
-<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+<div class="modal fade" id="imageModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="imageModalLabel">Incident Photo</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body text-center">
-                <img id="modalImage" src="" alt="Incident Photo" class="img-fluid" style="max-height: 70vh; border-radius: 8px;">
+            <div class="modal-body text-center p-0">
+                <img id="modalImage" src="" class="img-fluid" style="border-radius: 8px;">
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <a id="downloadImageBtn" href="" download class="btn btn-primary">
-                    <i class="fas fa-download"></i> Download Image
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Map Preview Modal -->
-<div class="modal fade" id="mapPreviewModal" tabindex="-1" aria-labelledby="mapPreviewModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="mapPreviewModalLabel">Incident Location Preview</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <strong>Type:</strong> <span id="incidentType" class="badge bg-primary"></span>
-                    </div>
-                    <div class="col-md-6">
-                        <strong>Incident ID:</strong> #<span id="incidentId"></span>
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <strong>Description:</strong>
-                    <p id="incidentDescription" class="text-muted"></p>
-                </div>
-                <div class="mb-3">
-                    <strong>Location:</strong>
-                    <div id="mapContainer" style="height: 300px; border-radius: 8px;"></div>
-                </div>
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i> Review the incident location above. Click "Accept Incident" to proceed with accepting this incident.
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form method="post" style="display:inline;" id="acceptForm">
-                    <input type="hidden" name="accept_incident_id" id="acceptIncidentId">
-                    <button type="submit" class="btn btn-primary">Accept Incident</button>
-                </form>
             </div>
         </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 <script>
-let map = null;
-
-// Function to show image in modal
-function showImageModal(imagePath, title) {
-    document.getElementById('modalImage').src = imagePath;
-    document.getElementById('imageModalLabel').textContent = title;
-    document.getElementById('downloadImageBtn').href = imagePath;
-    
-    const modal = new bootstrap.Modal(document.getElementById('imageModal'));
-    modal.show();
+function showDeclineModal(id, type) {
+    document.getElementById('declineIncidentId').value = id;
+    document.getElementById('declineIncidentType').textContent = type;
+    document.getElementById('declineReason').value = '';
+    new bootstrap.Modal(document.getElementById('declineModal')).show();
+}
+function showImageModal(url) {
+    document.getElementById('modalImage').src = url;
+    new bootstrap.Modal(document.getElementById('imageModal')).show();
 }
 
-function showMapPreview(incidentId, latitude, longitude, type, description) {
-    // Set incident details
-    document.getElementById('incidentId').textContent = incidentId;
-    document.getElementById('incidentType').textContent = type;
-    document.getElementById('incidentDescription').textContent = description;
-    document.getElementById('acceptIncidentId').value = incidentId;
+// ============================================
+// ONLINE STATUS TRACKING FOR RESPONDERS
+// ============================================
+const USER_ID = <?= json_encode($_SESSION['user_id']) ?>;
+let onlineStatusInterval = null;
+
+// Update online status
+function updateOnlineStatus(isOnline = true) {
+    const formData = new FormData();
+    formData.append('user_id', USER_ID);
+    formData.append('is_online', isOnline ? 1 : 0);
+    formData.append('device_info', 'Web Browser - Responder Dashboard');
     
-    // Show modal
-    const modal = new bootstrap.Modal(document.getElementById('mapPreviewModal'));
-    modal.show();
-    
-    // Initialize map after modal is shown
-    setTimeout(() => {
-        if (map) {
-            map.remove();
+    fetch('../api_update_status.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Online status updated:', isOnline ? 'online' : 'offline');
         }
-        
-        if (latitude && longitude) {
-            // Initialize map with incident location
-            map = L.map('mapContainer').setView([parseFloat(latitude), parseFloat(longitude)], 15);
-            
-            // Add tile layer
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-            
-            // Add marker for incident location
-            const marker = L.marker([parseFloat(latitude), parseFloat(longitude)]).addTo(map);
-            marker.bindPopup(`<b>${type} Incident</b><br>${description}`).openPopup();
-            
-            // Add circle to show approximate area
-            L.circle([parseFloat(latitude), parseFloat(longitude)], {
-                color: 'red',
-                fillColor: '#f03',
-                fillOpacity: 0.2,
-                radius: 100
-            }).addTo(map);
-        } else {
-            // No location data available
-            document.getElementById('mapContainer').innerHTML = '<div class="alert alert-warning text-center"><i class="bi bi-geo-alt"></i> No location data available for this incident.</div>';
-        }
-    }, 300);
+    })
+    .catch(error => {
+        console.error('Failed to update online status:', error);
+    });
 }
 
-// Clean up map when modal is hidden
-document.getElementById('mapPreviewModal').addEventListener('hidden.bs.modal', function () {
-    if (map) {
-        map.remove();
-        map = null;
+// Start online status tracking
+function startOnlineStatusTracking() {
+    // Update immediately on page load
+    updateOnlineStatus(true);
+    
+    // Update every 2 minutes (120000ms)
+    onlineStatusInterval = setInterval(function() {
+        updateOnlineStatus(true);
+    }, 120000);
+}
+
+// Stop online status tracking and mark as offline
+function stopOnlineStatusTracking() {
+    if (onlineStatusInterval) {
+        clearInterval(onlineStatusInterval);
+        onlineStatusInterval = null;
+    }
+    updateOnlineStatus(false);
+}
+
+// Start tracking when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    startOnlineStatusTracking();
+});
+
+// Mark as offline when page is closed/navigated away
+window.addEventListener('beforeunload', function() {
+    // Use sendBeacon for reliable offline status update
+    const formData = new FormData();
+    formData.append('user_id', USER_ID);
+    formData.append('is_online', 0);
+    formData.append('device_info', 'Web Browser - Responder Dashboard');
+    navigator.sendBeacon('../api_update_status.php', formData);
+});
+
+// Handle visibility change (tab switching)
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+        updateOnlineStatus(true);
     }
 });
 </script>

@@ -9,6 +9,12 @@ if (isset($_GET['logout']) && $_GET['logout'] == '1') {
     $login_msg = '<div class="alert alert-success">You have been successfully logged out.</div>';
 }
 
+// Check for password reset success
+if (isset($_SESSION['password_reset_success'])) {
+    $login_msg = '<div class="alert alert-success">✅ Password reset successfully! You can now login with your new password.</div>';
+    unset($_SESSION['password_reset_success']);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -22,7 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['name'] = $user['name'];
             $_SESSION['role'] = $user['role'];
             // Redirect based on role
-            if ($user['role'] === 'admin') {
+            if ($user['role'] === 'super_admin') {
+                header('Location: admin/super_admin_dashboard.php');
+                exit;
+            } elseif ($user['role'] === 'admin') {
                 header('Location: admin/admin_dashboard.php');
                 exit;
             } elseif ($user['role'] === 'responder') {
@@ -116,6 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <button type="submit" class="btn btn-primary w-100 fw-semibold" style="background: linear-gradient(135deg, #7b7be0 0%, #a18cd1 100%); border: none;"><i class="bi bi-box-arrow-in-right"></i> Sign In</button>
         </form>
+        <div class="mt-2 text-end">
+            <a href="forgot_password.php" style="color:#7b7be0; text-decoration:none; font-size:0.9rem;">
+                <i class="bi bi-key"></i> Forgot Password?
+            </a>
+        </div>
         <div class="mt-3">
             <span>Don't have an account? <a href="register.php" style="color:#7b7be0;">Register here</a></span>
         </div>

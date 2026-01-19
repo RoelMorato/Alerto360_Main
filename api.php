@@ -242,4 +242,3 @@ switch ($path) {
     default:
         sendResponse(['error' => 'Endpoint not found'], 404);
 }
-?>

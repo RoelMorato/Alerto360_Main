@@ -1,14 +1,7 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    exit(0);
-}
-
-require 'db_connect.php';
+// Initialize API with clean JSON output
+require_once 'api_init.php';
+require_once 'db_connect.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -26,11 +19,27 @@ if (empty($email) || empty($password)) {
 }
 
 try {
-    $stmt = $pdo->prepare("SELECT id, name, email, password, role FROM users WHERE email = ?");
+    $stmt = $pdo->prepare("
+        SELECT id, name, email, password, role, email_verified, verification_required 
+        FROM users 
+        WHERE email = ?
+    ");
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($user && password_verify($password, $user['password'])) {
+        // Check if email verification is required
+        if ($user['verification_required'] == 1 && $user['email_verified'] == 0) {
+            http_response_code(403);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Please verify your email before logging in',
+                'requires_verification' => true,
+                'email' => $user['email']
+            ]);
+            exit;
+        }
+        
         echo json_encode([
             'success' => true,
             'message' => 'Login successful',
@@ -38,7 +47,8 @@ try {
                 'id' => (int)$user['id'],
                 'name' => $user['name'],
                 'email' => $user['email'],
-                'role' => $user['role']
+                'role' => $user['role'],
+                'email_verified' => (bool)$user['email_verified']
             ]
         ]);
     } else {
