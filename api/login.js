@@ -1,4 +1,6 @@
-export default function handler(req, res) {
+const { query, verifyPassword } = require('./database');
+
+export default async function handler(req, res) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -18,34 +20,33 @@ export default function handler(req, res) {
     return res.status(400).json({ success: false, message: 'Email and password required' });
   }
   
-  // Demo users (same as PHP version)
-  const users = {
-    'admin@alerto360.com': {
-      id: 1,
-      name: 'Admin User',
-      email: 'admin@alerto360.com',
-      password: 'admin123', // In real app, this would be hashed
-      role: 'admin'
-    },
-    'test@alerto360.com': {
-      id: 2,
-      name: 'Test User',
-      email: 'test@alerto360.com',
-      password: 'test123',
-      role: 'citizen'
-    },
-    'responder@alerto360.com': {
-      id: 3,
-      name: 'Responder One',
-      email: 'responder@alerto360.com',
-      password: 'responder123',
-      role: 'responder'
+  try {
+    // Query database for user
+    const users = await query(
+      'SELECT * FROM users WHERE email = $1 LIMIT 1',
+      [email]
+    );
+    
+    if (users.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
     }
-  };
-  
-  const user = users[email];
-  
-  if (user && user.password === password) {
+    
+    const user = users[0];
+    
+    // Verify password
+    const isValidPassword = await verifyPassword(password, user.password);
+    
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+    
+    // Return user data
     return res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -54,13 +55,15 @@ export default function handler(req, res) {
         name: user.name,
         email: user.email,
         role: user.role,
-        email_verified: true
+        email_verified: user.email_verified || true
       }
     });
-  } else {
-    return res.status(401).json({
+    
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Invalid email or password'
+      message: 'Database error occurred'
     });
   }
 }

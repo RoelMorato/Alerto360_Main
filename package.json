@@ -1,0 +1,16 @@
+{
+  "name": "alerto360-api",
+  "version": "1.0.0",
+  "description": "Alerto360 Emergency Response System API",
+  "main": "index.js",
+  "dependencies": {
+    "pg": "^8.11.3",
+    "bcrypt": "^5.1.1"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["emergency", "response", "api"],
+  "author": "Alerto360 Team",
+  "license": "MIT"
+}
