@@ -8,6 +8,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
+// Include Vercel-compatible database connection
+require_once 'vercel_db.php';
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
@@ -23,42 +26,37 @@ if (empty($email) || empty($password)) {
     exit;
 }
 
-// For demo purposes - replace with your actual database
-$users = [
-    'admin@alerto360.com' => [
-        'id' => 1,
-        'name' => 'Admin User',
-        'email' => 'admin@alerto360.com',
-        'password' => password_hash('admin123', PASSWORD_DEFAULT),
-        'role' => 'admin'
-    ],
-    'test@alerto360.com' => [
-        'id' => 2,
-        'name' => 'Test User',
-        'email' => 'test@alerto360.com',
-        'password' => password_hash('test123', PASSWORD_DEFAULT),
-        'role' => 'citizen'
-    ]
-];
-
-if (isset($users[$email]) && password_verify($password, $users[$email]['password'])) {
-    $user = $users[$email];
-    echo json_encode([
-        'success' => true,
-        'message' => 'Login successful',
-        'user' => [
-            'id' => $user['id'],
-            'name' => $user['name'],
-            'email' => $user['email'],
-            'role' => $user['role'],
-            'email_verified' => true
-        ]
-    ]);
-} else {
-    http_response_code(401);
+try {
+    // Use database connection from vercel_db.php
+    global $pdo;
+    
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
+    
+    if ($user && password_verify($password, $user['password'])) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Login successful',
+            'user' => [
+                'id' => $user['id'],
+                'name' => $user['name'],
+                'email' => $user['email'],
+                'role' => $user['role'],
+                'email_verified' => $user['email_verified'] ?? true
+            ]
+        ]);
+    } else {
+        http_response_code(401);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Invalid email or password'
+        ]);
+    }
+} catch (Exception $e) {
+    http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Invalid email or password'
+        'message' => 'Database error: ' . $e->getMessage()
     ]);
 }
-?>

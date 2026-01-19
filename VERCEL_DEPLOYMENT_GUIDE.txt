@@ -1,108 +1,71 @@
-========================================
-VERCEL DEPLOYMENT GUIDE - ALERTO360
-========================================
+# Vercel Deployment Guide for Alerto360
 
-GOAL: Deploy API to Vercel for global access
-RESULT: APK will work anywhere with internet
+## Quick Deploy Steps:
 
-========================================
-STEP 1: INSTALL VERCEL CLI
-========================================
+### 1. Deploy via Vercel Dashboard
+1. Go to https://vercel.com/dashboard
+2. Click "Add New..." → "Project"
+3. Import from GitHub: `RoelMorato/Alerto360_Main`
+4. Framework: "Other" (PHP project)
+5. Click "Deploy"
 
-1. Install Node.js from: https://nodejs.org/
-2. Open Command Prompt
-3. Run: npm install -g vercel
-4. Verify: vercel --version
+### 2. Add Environment Variables
+After deployment, go to Project Settings → Environment Variables:
 
-========================================
-STEP 2: DEPLOY TO VERCEL
-========================================
+```
+GROK_API_KEY=your-xai-api-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
+```
 
-1. Open Command Prompt in project folder:
-   cd C:\xampp82\htdocs\Alerto360-main
+### 3. Database Setup
+Vercel doesn't support MySQL directly. Options:
 
-2. Login to Vercel:
-   vercel login
+**Option A: Vercel Postgres (Recommended)**
+- Go to Storage tab in Vercel dashboard
+- Create Postgres database
+- Update `api/db_login.php` with Vercel Postgres credentials
 
-3. Deploy project:
-   vercel
+**Option B: External Database**
+- Use PlanetScale, Railway, or Supabase
+- Update connection details in `db_connect.php`
 
-4. Follow prompts:
-   - Set up and deploy? Y
-   - Which scope? (choose your account)
-   - Link to existing project? N
-   - Project name: alerto360-api
-   - Directory: ./
-   - Override settings? N
+### 4. Update Flutter App
+After deployment, update your Flutter app:
 
-5. Wait for deployment (2-3 minutes)
+1. Open `alerto360_app/lib/services/api_service.dart`
+2. Change baseUrl to your Vercel URL:
+```dart
+static const String baseUrl = 'https://your-app-name.vercel.app';
+```
+3. Rebuild APK: `flutter build apk --release`
 
-6. Copy the production URL (e.g., https://alerto360-api.vercel.app)
+### 5. Test Deployment
+- Visit: `https://your-app-name.vercel.app`
+- Test login with: admin@alerto360.com / admin123
+- Test mobile app with new URL
 
-========================================
-STEP 3: UPDATE FLUTTER APP
-========================================
+## Troubleshooting:
 
-1. Update baseUrl in api_service.dart:
-   static const String baseUrl = 'https://YOUR_VERCEL_URL';
+### PHP Runtime Issues
+Vercel supports PHP but with limitations. If you encounter issues:
+1. Use Vercel's PHP runtime
+2. Ensure all PHP files are in root directory
+3. Check Vercel function logs
 
-2. Build new APK:
-   cd alerto360_app
-   flutter build apk --release
+### Database Connection
+- Vercel functions are serverless - use connection pooling
+- Consider using Vercel Postgres or external database
+- Update connection strings in environment variables
 
-========================================
-STEP 4: TEST DEPLOYMENT
-========================================
+### API Endpoints
+- All API files should work as Vercel functions
+- Test each endpoint: `/api_login.php`, `/api_register.php`, etc.
 
-1. Test API endpoints:
-   - https://YOUR_VERCEL_URL/api/login
-   - https://YOUR_VERCEL_URL/api/register
-
-2. Test credentials:
-   - Email: admin@alerto360.com
-   - Password: admin123
-   
-   OR
-   
-   - Email: test@alerto360.com
-   - Password: test123
-
-3. Install and test APK
-
-========================================
-ADVANTAGES OF VERCEL
-========================================
-
-✅ Free hosting
-✅ Global CDN
-✅ No mobile blocking
-✅ HTTPS by default
-✅ Fast deployment
-✅ Automatic scaling
-✅ Works anywhere with internet
-
-========================================
-TROUBLESHOOTING
-========================================
-
-ERROR: "vercel not found"
-SOLUTION: Install Node.js first, then npm install -g vercel
-
-ERROR: "Login failed"
-SOLUTION: Create free account at vercel.com first
-
-ERROR: "Deployment failed"
-SOLUTION: Check vercel.json syntax and file structure
-
-========================================
-PRODUCTION READY
-========================================
-
-After successful deployment:
-- APK works globally
-- No local server needed
-- No ngrok required
-- Professional hosting
-- Reliable uptime
-
-========================================
+## Next Steps:
+1. Deploy to Vercel dashboard
+2. Configure environment variables
+3. Set up database
+4. Update Flutter app baseUrl
+5. Rebuild and test APK
