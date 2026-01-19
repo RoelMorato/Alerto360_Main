@@ -1,0 +1,8 @@
+alerto360_app/
+*.md
+*.txt
+*.bat
+vendor/
+uploads/
+.git/
+.vscode/
