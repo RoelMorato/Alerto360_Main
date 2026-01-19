@@ -1,5 +1,5 @@
 alerto360_app/
-alerto360_app/**
+alerto360_app/**/*
 *.md
 *.txt
 *.bat
@@ -8,3 +8,4 @@ uploads/
 .git/
 .vscode/
 .gitmodules
+test.php
