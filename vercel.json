@@ -1,6 +1,15 @@
 {
   "functions": {
+    "*.php": {
+      "runtime": "vercel-php@0.6.0"
+    },
     "api/*.php": {
+      "runtime": "vercel-php@0.6.0"
+    },
+    "admin/*.php": {
+      "runtime": "vercel-php@0.6.0"
+    },
+    "user/*.php": {
       "runtime": "vercel-php@0.6.0"
     }
   },
@@ -8,6 +17,18 @@
     {
       "src": "/api/(.*)",
       "dest": "/api/$1"
+    },
+    {
+      "src": "/admin/(.*)",
+      "dest": "/admin/$1"
+    },
+    {
+      "src": "/user/(.*)",
+      "dest": "/user/$1"
+    },
+    {
+      "src": "/(.*\\.php)",
+      "dest": "/$1"
     }
   ]
 }
