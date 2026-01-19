@@ -1,4 +1,5 @@
 alerto360_app/
+alerto360_app/**
 *.md
 *.txt
 *.bat
@@ -6,3 +7,4 @@ vendor/
 uploads/
 .git/
 .vscode/
+.gitmodules
